@@ -106,6 +106,44 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         
         print("⚡️ [HealthPlugin] Querying latest sample for data type: \(dataTypeString)")
+        // ---- Special handling for sleep category ----
+        if dataTypeString == "sleep" {
+            guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
+                call.reject("Sleep analysis type not available")
+                return
+            }
+            
+            let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+            let predicate = HKQuery.predicateForSamples(withStart: Date.distantPast, end: Date(), options: .strictEndDate)
+            
+            let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, error in
+                
+                guard let categorySample = samples?.first as? HKCategorySample else {
+                    if let error = error {
+                        call.reject("Error fetching latest sleep sample", "NO_SAMPLE", error)
+                    } else {
+                        call.reject("No sleep sample found", "NO_SAMPLE")
+                    }
+                    return
+                }
+                
+                let start = categorySample.startDate
+                let end = categorySample.endDate
+                let durationMinutes = end.timeIntervalSince(start) / 60.0
+                
+                call.resolve([
+                    "value": durationMinutes,
+                    "unit": "min",
+                    "startDate": start.timeIntervalSince1970 * 1000,
+                    "endDate": end.timeIntervalSince1970 * 1000,
+                    "timestamp": start.timeIntervalSince1970 * 1000,
+                    "categoryValue": categorySample.value
+                ])
+            }
+            
+            healthStore.execute(query)
+            return
+        }
         // ---- Special handling for blood‑pressure correlation ----
         if dataTypeString == "blood-pressure" {
             guard let bpType = HKObjectType.correlationType(forIdentifier: .bloodPressure) else {
@@ -176,7 +214,11 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 return HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)
             case "total-calories":
                 return HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)
+            case "body-fat":
+                return HKObjectType.quantityType(forIdentifier: .bodyFatPercentage)
             case "blood-pressure":
+                return nil // handled above
+            case "sleep":
                 return nil // handled above
             default:
                 return nil
@@ -219,17 +261,36 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 unit = HKUnit.kilocalorie()
             } else if dataTypeString == "height" {
                 unit = HKUnit.meter()
+            } else if dataTypeString == "body-fat" {
+                unit = .percent()
             }
-            let value = quantitySample.quantity.doubleValue(for: unit)
+            
+            var value: Double
+            if dataTypeString == "body-fat" {
+                // HealthKit stores percent as a fraction (e.g. 0.21 for 21%)
+                let raw = quantitySample.quantity.doubleValue(for: unit)
+                value = raw * 100.0
+            } else {
+                value = quantitySample.quantity.doubleValue(for: unit)
+            }
+            
             let timestamp = quantitySample.startDate.timeIntervalSince1970 * 1000
 
             print("⚡️ [HealthPlugin] Successfully fetched \(dataTypeString): value=\(value), unit=\(unit.unitString)")
 
-            call.resolve([
+            var result: [String: Any] = [
                 "value": value,
                 "timestamp": timestamp,
-                "unit": unit.unitString
-            ])
+                "unit": dataTypeString == "body-fat" ? "percent" : unit.unitString
+            ]
+            
+            // Add startDate and endDate for body-fat to be consistent with sleep
+            if dataTypeString == "body-fat" {
+                result["startDate"] = quantitySample.startDate.timeIntervalSince1970 * 1000
+                result["endDate"] = quantitySample.endDate.timeIntervalSince1970 * 1000
+            }
+            
+            call.resolve(result)
         }
 
         healthStore.execute(query)
@@ -335,6 +396,10 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic),
                 HKObjectType.quantityType(forIdentifier: .bloodPressureDiastolic)
             ].compactMap { $0 }
+        case "READ_BODY_FAT":
+            return [HKObjectType.quantityType(forIdentifier: .bodyFatPercentage)].compactMap { $0 }
+        case "READ_SLEEP":
+            return [HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!].compactMap { $0 }
         // Add common alternative permission names
         case "steps":
             return [HKObjectType.quantityType(forIdentifier: .stepCount)].compactMap{$0}
@@ -371,6 +436,10 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic),
                 HKObjectType.quantityType(forIdentifier: .bloodPressureDiastolic)
             ].compactMap { $0 }
+        case "body-fat", "bodyfat", "body_fat":
+            return [HKObjectType.quantityType(forIdentifier: .bodyFatPercentage)].compactMap { $0 }
+        case "sleep", "sleep-analysis":
+            return [HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!].compactMap { $0 }
         default:
             print("⚡️ [HealthPlugin] Unknown permission: \(permission)")
             return []
@@ -395,6 +464,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)
         case "height":
             return HKObjectType.quantityType(forIdentifier: .height)
+        case "body-fat":
+            return HKObjectType.quantityType(forIdentifier: .bodyFatPercentage)
         default:
             return nil
         }

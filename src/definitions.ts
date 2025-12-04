@@ -58,6 +58,8 @@ export interface HealthPlugin {
 
   /**
    * Query latest sample for a specific data type
+   * Supported dataType values: "heart-rate", "weight", "steps", "hrv", "height", "distance", 
+   * "active-calories", "total-calories", "blood-pressure", "body-fat", "sleep"
    * @param request
    */
   queryLatestSample(request: { dataType: string }): Promise<QueryLatestSampleResponse>;
@@ -81,6 +83,19 @@ export interface HealthPlugin {
    * Query latest steps sample
    */
   querySteps(): Promise<QueryLatestSampleResponse>;
+
+  /**
+   * Query latest body fat percentage sample
+   * dataType internally: "body-fat"
+   */
+  queryBodyFat(): Promise<QueryLatestSampleResponse>;
+
+  /**
+   * Query latest sleep sample
+   * Returns duration in minutes for the latest sleep session
+   * dataType internally: "sleep"
+   */
+  querySleep(): Promise<QueryLatestSampleResponse>;
 }
 
 export declare type HealthPermission =
@@ -95,7 +110,9 @@ export declare type HealthPermission =
   | 'READ_ROUTE'
   | 'READ_MINDFULNESS'
   | 'READ_HRV'
-  | 'READ_BLOOD_PRESSURE';
+  | 'READ_BLOOD_PRESSURE'
+  | 'READ_BODY_FAT'
+  | 'READ_SLEEP';
 
 export interface PermissionsRequest {
   permissions: HealthPermission[];
