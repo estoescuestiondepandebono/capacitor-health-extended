@@ -1,6 +1,6 @@
 {
-  "name": "@flomentumsolutions/capacitor-health-extended",
-  "version": "0.1.0",
+  "name": "@estoescuestiondepandebono/capacitor-health-extended",
+  "version": "0.1.4",
   "description": "Capacitor plugin for Apple HealthKit and Google Health Connect Platform",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
@@ -13,16 +13,16 @@
     "ios/Sources",
     "ios/Tests",
     "Package.swift",
-    "FlomentumsolutionsCapacitorHealthExtended.podspec"
+    "VisualJournalCapacitorHealthExtended.podspec"
   ],
-  "author": "Flomentum Solutions, LLC",
+  "author": "Visual Journal",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Flomentum-Solutions/capacitor-health-extended.git"
+    "url": "https://github.com/estoescuestiondepandebono/capacitor-health-extended.git"
   },
   "bugs": {
-    "url": "https://github.com/Flomentum-Solutions/capacitor-health-extended/issues"
+    "url": "https://github.com/estoescuestiondepandebono/capacitor-health-extended/issues"
   },
   "keywords": [
     "capacitor",
@@ -48,7 +48,8 @@
     "build": "npm run clean && tsc && rollup -c rollup.config.mjs",
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "prepare": "npm run build"
   },
   "devDependencies": {
     "@capacitor/android": "^7.0.0",
