@@ -106,19 +106,19 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         
         print("⚡️ [HealthPlugin] Querying latest sample for data type: \(dataTypeString)")
-        // ---- Special handling for sleep category ----
-        if dataTypeString == "sleep" {
+        // ---- Special handling for sleep category ----  
+        if dataTypeString == "sleep" || dataTypeString == "sleepAnalysis" {
             guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
                 call.reject("Sleep analysis type not available")
                 return
             }
-            
+
             let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
             let predicate = HKQuery.predicateForSamples(withStart: Date.distantPast, end: Date(), options: .strictEndDate)
-            
+
             let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, error in
-                
-                guard let categorySample = samples?.first as? HKCategorySample else {
+
+                guard let sample = samples?.first as? HKCategorySample else {
                     if let error = error {
                         call.reject("Error fetching latest sleep sample", "NO_SAMPLE", error)
                     } else {
@@ -126,24 +126,44 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
                     return
                 }
-                
-                let start = categorySample.startDate
-                let end = categorySample.endDate
-                let durationMinutes = end.timeIntervalSince(start) / 60.0
-                
+
+                let sleepSD = sample.startDate as NSDate
+                let sleepED = sample.endDate as NSDate
+                let sleepInterval = sleepED.timeIntervalSince(sleepSD as Date)
+                let sleepHoursBetweenDates = sleepInterval / 3600.0
+
+                let sleepState = (sample.value == HKCategoryValueSleepAnalysis.inBed.rawValue) ? "InBed" : "Asleep"
+
+                // Construimos el objeto "Perfood-style"
+                let isoFormatter = ISO8601DateFormatter()
+                let constructedSample: [String: Any] = [
+                    "uuid": sample.uuid.uuidString,
+                    "timeZone": self.getTimeZoneString(sample: sample),
+                    "startDate": isoFormatter.string(from: sample.startDate),
+                    "endDate": isoFormatter.string(from: sample.endDate),
+                    "duration": sleepHoursBetweenDates,
+                    "sleepState": sleepState,
+                    "source": sample.sourceRevision.source.name,
+                    "sourceBundleId": sample.sourceRevision.source.bundleIdentifier,
+                    "device": self.getDeviceInformation(device: sample.device)
+                ]
+
+                // Respuesta compatible con QueryLatestSampleResponse
                 call.resolve([
-                    "value": durationMinutes,
-                    "unit": "min",
-                    "startDate": start.timeIntervalSince1970 * 1000,
-                    "endDate": end.timeIntervalSince1970 * 1000,
-                    "timestamp": start.timeIntervalSince1970 * 1000,
-                    "categoryValue": categorySample.value
+                    "value": sleepHoursBetweenDates,                      // duración en horas
+                    "unit": "h",
+                    "timestamp": sample.startDate.timeIntervalSince1970 * 1000,
+                    "rawSample": constructedSample
                 ])
             }
-            
-            healthStore.execute(query)
+
+            self.healthStore.execute(query)
             return
         }
+
+
+        
+
         // ---- Special handling for blood‑pressure correlation ----
         if dataTypeString == "blood-pressure" {
             guard let bpType = HKObjectType.correlationType(forIdentifier: .bloodPressure) else {
@@ -564,6 +584,37 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             healthStore.execute(query)
         }
+    }
+
+    func getTimeZoneString(sample: HKSample? = nil, shouldReturnDefaultTimeZoneInExceptions _: Bool = true) -> String {
+        var timeZone: TimeZone?
+        if let metaDataTimeZoneValue = sample?.metadata?[HKMetadataKeyTimeZone] as? String {
+            timeZone = TimeZone(identifier: metaDataTimeZoneValue)
+        }
+        if timeZone == nil {
+            timeZone = TimeZone.current
+        }
+        let seconds: Int = timeZone?.secondsFromGMT() ?? 0
+        let hours = seconds / 3600
+        let minutes = abs(seconds / 60) % 60
+        let timeZoneString = String(format: "%+.2d:%.2d", hours, minutes)
+        return timeZoneString
+    }
+
+    func getDeviceInformation(device: HKDevice?) -> [String: String?]? {
+        if (device == nil) {
+            return nil;
+        }
+        
+        let deviceInformation: [String: String?] = [
+            "name": device?.name,
+            "model": device?.model,
+            "manufacturer": device?.manufacturer,
+            "hardwareVersion": device?.hardwareVersion,
+            "softwareVersion": device?.softwareVersion,
+        ];
+                
+        return deviceInformation;
     }
 
     func queryMindfulnessAggregated(startDate: Date, endDate: Date, completion: @escaping ([[String: Any]]?, Error?) -> Void) {

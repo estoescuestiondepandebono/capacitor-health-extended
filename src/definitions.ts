@@ -178,10 +178,23 @@ export interface AggregatedSample {
   value: number;
 }
 
+export interface SleepRawSample {
+  uuid: string;
+  timeZone: string;
+  startDate: string;
+  endDate: string;
+  duration: number;            // horas
+  sleepState: 'InBed' | 'Asleep';
+  source: string;
+  sourceBundleId: string;
+  device?: any;
+}
+
 export interface QueryLatestSampleResponse {
   value?: number;
   systolic?: number;
   diastolic?: number;
   timestamp: number;
   unit: string;
+  rawSample?: SleepRawSample;
 }
