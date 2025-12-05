@@ -21,7 +21,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "queryWeight", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryHeight", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryHeartRate", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "querySteps", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "querySteps", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "querySleepForDate", returnType: CAPPluginReturnPromise),
     ]
     
     let healthStore = HKHealthStore()
@@ -315,6 +316,107 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
 
         healthStore.execute(query)
     }
+
+    @objc func querySleepForDate(_ call: CAPPluginCall) {
+        guard let startDateString = call.getString("startDate"),
+            let endDateString = call.getString("endDate") else {
+            call.reject("Missing startDate or endDate")
+            return
+        }
+
+        let isoFormatter = ISO8601DateFormatter()
+
+        guard let startDate = isoFormatter.date(from: startDateString),
+            let endDate = isoFormatter.date(from: endDateString) else {
+            call.reject("Invalid date format. Expected ISO8601 strings.")
+            return
+        }
+
+        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
+            call.reject("Sleep analysis type not available")
+            return
+        }
+
+        let predicate = HKQuery.predicateForSamples(
+            withStart: startDate,
+            end: endDate,
+            options: [.strictStartDate, .strictEndDate]
+        )
+
+        let sortDescriptor = NSSortDescriptor(
+            key: HKSampleSortIdentifierStartDate,
+            ascending: true
+        )
+
+        let query = HKSampleQuery(
+            sampleType: sleepType,
+            predicate: predicate,
+            limit: HKObjectQueryNoLimit,
+            sortDescriptors: [sortDescriptor]
+        ) { _, samples, error in
+
+            if let error = error {
+                call.reject("Error fetching sleep samples", "SLEEP_QUERY_ERROR", error)
+                return
+            }
+
+            guard let results = samples, !results.isEmpty else {
+                call.resolve([
+                    "totalHours": 0.0,
+                    "segments": []
+                ])
+                return
+            }
+
+            var segments: [[String: Any]] = []
+            var totalHours: Double = 0.0
+
+            for result in results {
+                guard let sample = result as? HKCategorySample else {
+                    continue
+                }
+
+                let sleepSD = sample.startDate as NSDate
+                let sleepED = sample.endDate as NSDate
+                let sleepInterval = sleepED.timeIntervalSince(sleepSD as Date)
+                let sleepHoursBetweenDates = sleepInterval / 3600.0
+                totalHours += sleepHoursBetweenDates
+
+                let sleepState: String = (sample.value == HKCategoryValueSleepAnalysis.inBed.rawValue)
+                    ? "InBed"
+                    : "Asleep"
+
+                // timeZone estilo "+01:00"
+                let timeZone = TimeZone.current
+                let secondsFromGMT = timeZone.secondsFromGMT(for: sample.startDate)
+                let hours = secondsFromGMT / 3600
+                let minutes = abs(secondsFromGMT / 60) % 60
+                let timeZoneString = String(format: "%+.2d:%.2d", hours, minutes)
+
+                let segment: [String: Any] = [
+                    "uuid": sample.uuid.uuidString,
+                    "timeZone": timeZoneString,
+                    "startDate": isoFormatter.string(from: sample.startDate),
+                    "endDate": isoFormatter.string(from: sample.endDate),
+                    "duration": sleepHoursBetweenDates,
+                    "sleepState": sleepState,
+                    "source": sample.sourceRevision.source.name,
+                    "sourceBundleId": sample.sourceRevision.source.bundleIdentifier,
+                    "device": NSNull() // puedes cambiar esto si quieres enviar info real del device
+                ]
+
+                segments.append(segment)
+            }
+
+            call.resolve([
+                "totalHours": totalHours,
+                "segments": segments
+            ])
+        }
+
+        self.healthStore.execute(query)
+    }
+
     
     // Convenience methods for specific data types
     @objc func queryWeight(_ call: CAPPluginCall) {

@@ -96,6 +96,13 @@ export interface HealthPlugin {
    * dataType internally: "sleep"
    */
   querySleep(): Promise<QueryLatestSampleResponse>;
+
+    /**
+   * Query sleep analysis for a specific date range.
+   * Returns total hours and list of segments (similar to the old Perfood plugin).
+   */
+    querySleepForDate(request: QuerySleepForDateRequest): Promise<QuerySleepForDateResponse>;
+
 }
 
 export declare type HealthPermission =
@@ -197,4 +204,26 @@ export interface QueryLatestSampleResponse {
   timestamp: number;
   unit: string;
   rawSample?: SleepRawSample;
+}
+
+export interface SleepSegment {
+  uuid: string;
+  timeZone: string;
+  startDate: string;   // ISO string
+  endDate: string;     // ISO string
+  duration: number;    // horas
+  sleepState: 'InBed' | 'Asleep';
+  source: string;
+  sourceBundleId: string;
+  device?: any;
+}
+
+export interface QuerySleepForDateRequest {
+  startDate: string;   // ISO, ej. "2025-11-23T23:00:00.000Z"
+  endDate: string;     // ISO
+}
+
+export interface QuerySleepForDateResponse {
+  totalHours: number;
+  segments: SleepSegment[];
 }
