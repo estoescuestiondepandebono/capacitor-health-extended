@@ -324,10 +324,25 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
+        // Configuramos el formatter para aceptar .000Z, .999Z, etc.
         let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
-        guard let startDate = isoFormatter.date(from: startDateString),
-            let endDate = isoFormatter.date(from: endDateString) else {
+        func parseISO(_ value: String) -> Date? {
+            // 1) Intento con milisegundos
+            if let d = isoFormatter.date(from: value) {
+                return d
+            }
+            // 2) Fallback: recortar milisegundos si vienen
+            if let dotRange = value.range(of: ".") {
+                let noMillis = String(value[..<dotRange.lowerBound]) + "Z"
+                return isoFormatter.date(from: noMillis)
+            }
+            return nil
+        }
+
+        guard let startDate = parseISO(startDateString),
+            let endDate = parseISO(endDateString) else {
             call.reject("Invalid date format. Expected ISO8601 strings.")
             return
         }
@@ -386,7 +401,6 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                     ? "InBed"
                     : "Asleep"
 
-                // timeZone estilo "+01:00"
                 let timeZone = TimeZone.current
                 let secondsFromGMT = timeZone.secondsFromGMT(for: sample.startDate)
                 let hours = secondsFromGMT / 3600
@@ -402,7 +416,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                     "sleepState": sleepState,
                     "source": sample.sourceRevision.source.name,
                     "sourceBundleId": sample.sourceRevision.source.bundleIdentifier,
-                    "device": NSNull() // puedes cambiar esto si quieres enviar info real del device
+                    "device": NSNull()
                 ]
 
                 segments.append(segment)
@@ -416,6 +430,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
 
         self.healthStore.execute(query)
     }
+
 
     
     // Convenience methods for specific data types
